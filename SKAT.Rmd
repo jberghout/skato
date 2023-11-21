@@ -8,27 +8,46 @@ date: "`r Sys.Date()`"
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(SKAT)
+library(skimr)
 ```
 
 ## R Markdown
 
-Markdown example of running a SKAT-o pipeline on toy data.
+Markdown example of running a SKAT-o pipeline on toy data. Tutorial as appears in https://cran.r-project.org/web/packages/SKAT/vignettes/SKAT.pdf
 
-Load example data.
-```{r cars}
+Load example data:
+```{r example}
 #An example dataset (SKAT.example) has a genotype matrix (Z) of 2000 individuals and 67 SNPs, vectors of continuous (y.c) and binary (y.b) phenotypes, and a covariates matrix (X).
 data(SKAT.example)
 names(SKAT.example)
-
-
 ```
 
-## Including Plots
+Explore the example data:
+```{r}
+#View Genotype Matrix
+View(SKAT.example$Z)
+#2000 rows (=individuals)
+#67 columns (=SNP genotypes, encoded as 0/1
+
+#View Phenotypes
+View(SKAT.example$X)
+skim(SKAT.example$X)
+
+#View covariates
+skim(SKAT.example$y.b)
+skim(SKAT.example$y.c)
+```
+
+
+## Null model association test to set baseline
 
 You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r association continuous}
+attach(SKAT.example)
+
+obj<-SKAT_Null_Model(y.c ~ X, out_type="C")
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
