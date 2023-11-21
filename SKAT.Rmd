@@ -14,7 +14,12 @@ library(SKAT)
 
 Markdown example of running a SKAT-o pipeline on toy data.
 
+Load example data.
 ```{r cars}
+#An example dataset (SKAT.example) has a genotype matrix (Z) of 2000 individuals and 67 SNPs, vectors of continuous (y.c) and binary (y.b) phenotypes, and a covariates matrix (X).
+data(SKAT.example)
+names(SKAT.example)
+
 
 ```
 

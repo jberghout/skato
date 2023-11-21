@@ -1,0 +1,61 @@
+---
+title: "Tangye_InbornErrorsImmunity"
+output: html_document
+date: "2023-11-20"
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(hgnc)
+```
+
+## Open hgnc
+```{r load hgnc ref}
+#check version, update
+hgnc::last_update()
+(url <- latest_archive_url())
+hgnc_dataset <- import_hgnc_dataset(url)
+hgnc_dataset<-hgnc_dataset %>% tidyr::unnest(., cols = alias_symbol)
+hgnc_dataset<-hgnc_dataset %>% tidyr::unnest(., cols = prev_symbol)
+
+hgnc_gene<-hgnc_dataset %>%
+  select(hgnc_id,symbol)
+
+hgnc_alias<-hgnc_dataset %>%
+  select(hgnc_id,alias_symbol)
+
+hgnc_prev<-hgnc_dataset %>%
+  select(hgnc_id,prev_symbol)
+
+```
+
+Read in gene list data:
+
+Tangye SG, Al-Herz W, Bousfiha A, Cunningham-Rundles C, Franco JL, Holland SM, Klein C, Morio T, Oksenhendler E, Picard C, Puel A, Puck J, Seppänen MRJ, Somech R, Su HC, Sullivan KE, Torgerson TR, Meyts I. Human Inborn Errors of Immunity: 2022 Update on the Classification from the International Union of Immunological Societies Expert Committee. J Clin Immunol. 2022 Oct;42(7):1473-1507. doi: 10.1007/s10875-022-01289-3. Epub 2022 Jun 24. PMID: 35748970; PMCID: PMC9244088.
+
+```{r}
+Tangye_2023 <- read_excel("~/Documents/NIH_reading/Gene List/10875_2022_1289_MOESM2_ESM.xlsx")
+```
+
+Join Tangye_2023 to HGNC official gene symbol table for 1:1 matching, no clean up required
+```{r}
+#Join supp table to HGNC official for 1:1 matching
+Tangye_2023_hgnc <-Tangye_2023 %>%
+  left_join(.,hgnc_gene, by = c("Genetic defect" = "symbol")) %>%
+  distinct()
+```
+
+Identify number of rows requiring cleanup
+```{r}
+sum(is.na(Tangye_2023_hgnc$hgnc_id))
+```
+
+```{r}
+#identify which rows did not match
+missing_IEUS<-which(is.na(Tangye_2023_hgnc$hgnc_id))
+missing_IEUS_list<-Tangye_2023_hgnc[missing_IEUS,"Genetic defect"]
+missing_IEUS_list
+write.csv(missing_IEUS_list, "missing_IEUS_list.csv")
+
+```
+
