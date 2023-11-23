@@ -1,6 +1,9 @@
 ---
 title: "SKAT-o"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_float: true 
 date: "`r Sys.Date()`"
 ---
 
@@ -145,9 +148,7 @@ The default shape parameters are `shape1 = 1` and `shape2 = 25`
 
 #### Beta distributions
 
-Beta distributions model the probability of a probability.
-
-Beta distributions are used in this context to describe the probability of disease when a qualifying variant is observed.
+Beta distributions model the probability of a probability. Beta distributions are used in this context to describe the probability of disease-causality for a variant based on the observed allele frequency.
 
 A good YouTube refresher on beta distributions: <https://www.youtube.com/watch?v=juF3r12nM5A>
 
@@ -241,4 +242,68 @@ SKAT(Z, obj, method="SKATO")$p.value
 ```
 
 ## Impute Missing Genotypes
+
+SKAT can impute missing genotypes using one of three functions:
+
+1.  bestguess: imputes missing genotypes as most likely values (0,1,2). Default for `SKAT.Binary`
+
+2.  fixed: imputes missing genotypes by assigning the mean genotype value (2p, p is the MAF). Default for `SKAT`
+
+3.  random: imputes missing genotypes by generating binomial(2,p) random variables.
+
+```{r}
+#Assign missing values, drop first three SNPs from individual 1
+Z1<-Z
+Z1[1,1:3]<-NA
+
+# bestguess imputation
+SKAT(Z1,obj,impute.method = "bestguess")$p.value
+
+# fixed imputation
+SKAT(Z1,obj,impute.method = "fixed")$p.value
+
+# random imputation
+SKAT(Z1,obj,impute.method = "random")$p.value
+```
+
+## Resampling
+
+Bootstrapping (with covariate adjustment) or permutation (when no covariates) can be used to empirically compute p-values used to control the family-wise error rate.
+
+```{r}
+# parametric boostrap.
+obj<-SKAT_Null_Model(y.b ~ X, out_type="D", n.Resampling=5000, type.Resampling="bootstrap")
+
+# SKAT p-value
+re<- SKAT(Z, obj, kernel = "linear.weighted")
+re$p.value # SKAT p-value
+Get_Resampling_Pvalue(re)
+```
+End section on unrelated participants
+```{r}
+detach(SKAT.example)
+```
+
+## Adjustment for Kinship
+
+When related individuals or population stratification exist in the data, it's important to adjust for kinship.
+
+For this section, a new example data package is required
+```{r}
+# This new dataset includes a genotype matrix (Z) of 1000 individuals and 64 SNPs, a single vector with a continuous phenotype (y), and a covariates matrix (X). It also includes a kinship matrix (K) which is a 1000x1000 dataframe
+data(SKAT.fam.example)
+names(SKAT.fam.example)
+attach(SKAT.fam.example)
+```
+
+```{r run skato}
+# compute SKAT NULL
+obj<-SKAT_NULL_emmaX(y ~ X, K=K)
+SKAT(Z, obj)$p.value
+
+# SKAT-O
+SKAT(Z, obj, method="SKATO")$p.value
+SKAT(Z, obj)$p.value
+```
+
 
