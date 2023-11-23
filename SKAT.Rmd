@@ -13,9 +13,10 @@ library(skimr)
 
 ## R Markdown
 
-Markdown example of running a SKAT-o pipeline on toy data. Tutorial as appears in https://cran.r-project.org/web/packages/SKAT/vignettes/SKAT.pdf
+Markdown example of running a SKAT-o pipeline on toy data. Tutorial as appears in <https://cran.r-project.org/web/packages/SKAT/vignettes/SKAT.pdf>
 
 Load example data:
+
 ```{r example}
 #An example dataset (SKAT.example) has a genotype matrix (Z) of 2000 individuals and 67 SNPs, vectors of continuous (y.c) and binary (y.b) phenotypes, and a covariates matrix (X).
 data(SKAT.example)
@@ -23,31 +24,221 @@ names(SKAT.example)
 ```
 
 Explore the example data:
+
 ```{r}
 #View Genotype Matrix
 View(SKAT.example$Z)
 #2000 rows (=individuals)
-#67 columns (=SNP genotypes, encoded as 0/1
+#67 columns (=SNP genotypes, minor allele encoded as 1, major as 0, with 2 for minor allele homozygotes)
 
-#View Phenotypes
+#View covariates
 View(SKAT.example$X)
 skim(SKAT.example$X)
 
-#View covariates
+#View phenotypes as binary (y.b) or continous (y.c)
 skim(SKAT.example$y.b)
 skim(SKAT.example$y.c)
-```
 
-
-## Null model association test to set baseline
-
-You can also embed plots, for example:
-
-```{r association continuous}
 attach(SKAT.example)
+```
 
+## Null model association test to set baseline and estimate parameters
+
+```{r association null model}
+# continuous trait
 obj<-SKAT_Null_Model(y.c ~ X, out_type="C")
+out.c<-SKAT(Z, obj)
+out.c$p.value
+out.c$param
+
+# dichotomous trait
+obj<-SKAT_Null_Model(y.b ~ X, out_type="D")
+out.d<-SKAT(Z, obj)
+out.d$p.value
+out.d$param
+
+# total minor allele count (MAC) for each variant in the genotype matrix
+out.c$test.snp.mac
+```
+
+### Small sample size adjustment for binary traits (method.bin parameter)
+
+When sample size is small, SKAT automatically performs an adjustment and resampling process.
+
+```         
+SKATBinary(Z, obj, kernel = "linear.weighted", method="SKAT"
+    , method.bin="Hybrid", weights.beta=c(1,25), weights = NULL
+    , r.corr=0, impute.method = "bestguess", is_check_genotype=TRUE
+    , is_dosage = FALSE, missing_cutoff=0.15, max_maf=1
+    , estimate_MAF=1, N.Resampling=2 *10^6, seednum=100, epsilon=10^-6
+    , SetID=NULL)
+```
+
+Implemented adjustment options in method.bin are:
+
+1.  Efficient resampling (ER)
+
+2.  ER with adaptive resampling (ER.A)
+
+3.  Quantile adjusted moment matching (QA)
+
+4.  Moment matching adjustment (MA)
+
+5.  No adjustment (UA)
+
+6.  Hybrid \<- **default\
+    **This selection selects the best method based on the total MAC, number of individuals with a qualifying minor allele, and the degree of case:control imbalance
+
+Moment matching (MA) is a statistical technique to estimate the parameters of a probability distribution. The idea is to find values of the unknown parameters that result in a match between the theoretical (population) and sample moments evaluated from the data.
+
+-   First order moment \~ sample mean (used as an estimate of population mean)
+-   Second order moment \~ variance
+-   Third order moment \~ kurtosis (how spread a sample distribution is, when specifically considering a sample that is symmetrically distributed around the mean)
+-   Fourth order moment \~ skewness (deviation from symmetrical)
+
+The application of moment matching to SKAT-o is described in:
+
+> Lee S, Fuchsberger C, Kim S, Scott L. An efficient resampling method for calibrating single and gene-based rare variant association analysis in case-control studies. Biostatistics. 2016 Jan;17(1):1-15. doi: 10.1093/biostatistics/kxv033. Epub 2015 Sep 11. PMID: 26363037; PMCID: PMC4692986. <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4692986>
+
+This is introduced because when the total minor allele count (sum of qualifying variants across a gene) is low, asymptotic tests are not well qualified for binary phenotypes and can yield conservative results (under a case:control balanced design) or anti-conservative results (under an unbalanced case:contro design). Since only carriers can contribute to the test statistic, the moments matching method allows Type 1 error rate control while conducting efficient resampling with appropriate covariate adjustment and improved use of computational resources. A low MAC can be considered \<40.
+
+```{r}
+# Subsample the example dataset
+IDX<-c(1:100,1001:1100)
+
+# with adjustment (default behaviour, or force with Adjustment = TRUE)
+obj.s<-SKAT_Null_Model(y.b[IDX] ~ X[IDX,],out_type="D")
+SKAT(Z[IDX,], obj.s, kernel = "linear.weighted")$p.value
+
+# compare to WITHOUT adjustment
+obj.s<-SKAT_Null_Model(y.b[IDX] ~ X[IDX,],out_type="D", Adjustment=FALSE)
+SKAT(Z[IDX,], obj.s, kernel = "linear.weighted")$p.value
+```
+
+### Saddle point approximation for case:control imbalance (SKAT.binary_Robust)
+
+Particularly for scalable implementations (biobank-wide), case control imbalances can exceed 1:99 and dramatically inflate Type 1 errors. This can be calibrated and adjusted by use of SKAT with a saddle point approximation. Computationally, this means using `SKAT.binary_Robust` in place of `SKAT.binary`
+
+This extension is described in more detail, and applied to UKBB:
+
+> Zhao Z, Bi W, Zhou W, VandeHaar P, Fritsche LG, Lee S. UK Biobank Whole-Exome Sequence Binary Phenome Analysis with Robust Region-Based Rare-Variant Test. Am J Hum Genet. 2020 Jan 2;106(1):3-12. doi: 10.1016/j.ajhg.2019.11.012. Epub 2019 Dec 19. PMID: 31866045; PMCID: PMC7042481. <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7042481/>
+
+This method also has application to joint association analysis for both rare and common variants within the same gene.
+
+```{r binary robust approach}
+# Robust, default behaviour
+out<-SKATBinary_Robust(Z[IDX,], obj.s, kernel = "linear.weighted")
+out$p.value
+```
+
+## Assign SNP weights
+
+Rare variants are more likely to be causal, with large effect sizes. To incorporate this assumption, the linear weighted kernel uses a weight matrix which, by default, is a beta density function based on minor allele frequency.
+
+> *`Weight matrix = W = diag{w_1, . ., w_i, . . , w_m}`*
+
+where
+
+> *`w_i = dbeta(p_i, 1, 25)`* and *`p_i`* is the MAF of *`SNP_i`*
+
+The default shape parameters are `shape1 = 1` and `shape2 = 25`
+
+#### Beta distributions
+
+Beta distributions model the probability of a probability.
+
+Beta distributions are used in this context to describe the probability of disease when a qualifying variant is observed.
+
+A good YouTube refresher on beta distributions: <https://www.youtube.com/watch?v=juF3r12nM5A>
+
+```{r}
+combine_beta_distributions <- function(shape1, shape2, title, df) {
+  x_beta_example <- seq(0, 1, length.out = 1000)
+  y_beta_example <- dbeta(x_beta_example, shape1, shape2)
+
+  df <- rbind(df, data.frame(x_beta_example, y_beta_example, type = title))
+  return(df)
+}
+
+# Initialize an empty data frame
+combined_data <- data.frame(x_beta_example = numeric(), y_beta_example = numeric(), type = character())
+
+# Combine beta distributions
+combined_data <- combine_beta_distributions(1, 1, "Uniform Distribution", combined_data)
+combined_data <- combine_beta_distributions(5, 3, "Left-Skewed Distribution", combined_data)
+combined_data <- combine_beta_distributions(3, 5, "Right-Skewed Distribution", combined_data)
+combined_data <- combine_beta_distributions(3, 3, "Symmetric Distribution at 3", combined_data)
+combined_data <- combine_beta_distributions(5, 5, "Symmetric Distribution at 5", combined_data)
+combined_data <- combine_beta_distributions(1, 25, "SKATO default of (1,25)", combined_data)
+
+# Plot combined data
+ggplot(combined_data, aes(x_beta_example, y_beta_example, color = type)) +
+  geom_line() +
+  labs(title = "Combined Beta Distributions") +
+  theme_minimal()
 
 ```
 
+### Examine weights
+
+```{r}
+# Run with default weight (1,25). This is a highly skewed distribution with a high probability of disease-contribution assigned to the smallest MAF and a low probability of disease-contribution assigned to alleles with larger MAF
+SKAT(Z, obj, kernel = "linear.weighted", weights.beta=c(1,25))$p.value
+
+# Run with Madsen Browning weight, which assumes 50% of variants contribute to disease risk. This is likely best saved for when prior filtering based on function has been done
+SKAT(Z, obj, kernel = "linear.weighted", weights.beta=c(0.5,0.5))$p.value
+
+# Create my own weight vector using the shape of the logistic weight
+
+# Create a new random/arbitrary vector of MAF
+MAF<-1:1000/1000
+MAF_example<-colMeans(Z)/2
+
+# using default parameters, arbitrary MAF data
+W_arbitrary<-Get_Logistic_Weights_MAF(MAF, par1=0.07, par2=150)
+par(mfrow=c(1,2))
+
+plot(MAF,W_arbitrary,xlab="MAF_arbitrary",ylab="Weights",type="l")
+plot(MAF[1:100],W_arbitrary[1:100],xlab="MAF_arbitrary",ylab="Weights",type="l")
+par(mfrow=c(1,2))
+
+# using default parameters, example data
+W_example<-Get_Logistic_Weights_MAF(MAF_example, par1=0.07, par2=150)
+par(mfrow=c(1,2))
+
+plot(MAF_example,W_example,xlab="MAF",ylab="Weights",type="l")
+plot(MAF_example[1:100],W_example[1:100],xlab="MAF_example_data",ylab="Weights",type="l")
+par(mfrow=c(1,2))
+
+# Run SKAT with logistic weight
+weights<-Get_Logistic_Weights(Z, par1=0.07, par2=150)
+SKAT(Z, obj, kernel = "linear.weighted", weights=weights)$p.value
+```
+
+## Run SKAT-O: Combined Test of burden test and SKAT
+
+A test statistic of the combined test is:
+
+> *Qρ = (1 − ρ)Q_S + ρQ_B,*
+
+where `Q_S` is a test statistic of SKAT, and `Q_B` is a score test statistic of the burden test. The ρ (rho) value can be specified by using the r.corr parameter (default: r.corr=0).
+
+Rho = 1 (burden) and rho = 0 (SKAT) tests are performed, and SKAT-O selects the optimal of the two tests. Depending on which option is chosen, SKAT-O models the phenotype versus a weighted aggregation of either the variants (burden test) or the variant score test statistics (SKAT) to produce a gene-level *P* value that indicates the degree of enrichment of rare variant associations in that gene.
+
+```{r adjust rho}
+# rho = 0, SKAT (default)
+SKAT(Z, obj, r.corr=0)$p.value
+
+# rho = 0.9
+SKAT(Z, obj, r.corr=0.9)$p.value
+
+# rho = 1, Burden test
+SKAT(Z, obj, r.corr=1)$p.value
+
+# Optimal Test (recommended!), rho = (0, 0.1^2 , 0.2^2, 0.3^2, 0.4^2, 0.5^2, 0.5, 1) using the minimum as the test statistics
+SKAT(Z, obj, method="SKATO")$p.value
+
+```
+
+## Impute Missing Genotypes
 
